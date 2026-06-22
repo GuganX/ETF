@@ -27,6 +27,7 @@ etfids:
 
 ```bash
 # 抓取設定檔內所有 ETF,存成今天的快照(可重複跑,同日會覆蓋)
+# 抓完會自動重新產生合併報表 report.html(加 --no-report 可略過)
 .venv/bin/python -m etf_tracker.cli fetch
 
 # 指定日期(回填或測試用)

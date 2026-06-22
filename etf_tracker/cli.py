@@ -1,7 +1,8 @@
 """Command line interface for the ETF holdings tracker.
 
 Subcommands:
-  fetch [--date YYYY-MM-DD]            Scrape every configured ETF, store a snapshot.
+  fetch [--date YYYY-MM-DD]            Scrape every configured ETF, store a snapshot,
+                                       and regenerate report.html (--no-report to skip).
   list  <etfid>                        List stored snapshot dates for an ETF.
   diff  <etfid> [date_a date_b]        Show change between two dates (default: latest two).
   report [etfid] [date] [--open]       Write a static HTML report. Omit etfid for a
@@ -47,6 +48,17 @@ def cmd_fetch(args: argparse.Namespace) -> int:
             db.log_fetch(conn, etfid, snapshot_date, _now_iso(), 0, "error", str(exc))
             print(f"[error] {etfid}  {snapshot_date}  {exc}", file=sys.stderr)
             exit_code = 1
+
+    if not args.no_report:
+        reports = [
+            r for e in config.etfids
+            if (r := _build_etf_report(conn, e, None)) is not None
+        ]
+        if reports:
+            Path(args.report_path).write_text(
+                report.render_combined_report(reports), encoding="utf-8"
+            )
+            print(f"Wrote {args.report_path}")
     conn.close()
     return exit_code
 
@@ -184,6 +196,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_fetch = sub.add_parser("fetch", help="scrape and store today's snapshot")
     p_fetch.add_argument("--date", help="override snapshot date (YYYY-MM-DD)")
+    p_fetch.add_argument(
+        "--report-path", default="report.html", help="combined HTML report output path"
+    )
+    p_fetch.add_argument(
+        "--no-report", action="store_true", help="skip regenerating the HTML report"
+    )
     p_fetch.set_defaults(func=cmd_fetch)
 
     p_list = sub.add_parser("list", help="list stored snapshot dates")
