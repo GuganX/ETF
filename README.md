@@ -38,6 +38,10 @@ etfids:
 # 比較變化(不給日期 = 自動比最近兩天)
 .venv/bin/python -m etf_tracker.cli diff 00981A.TW
 .venv/bin/python -m etf_tracker.cli diff 00981A.TW 2026-06-21 2026-06-22
+
+# 產生好讀的 HTML 報表(持股表格可排序 + 與前一日變化標色),並用瀏覽器打開
+.venv/bin/python -m etf_tracker.cli report 00981A.TW --open
+.venv/bin/python -m etf_tracker.cli report 00981A.TW 2026-06-22 -o my_report.html
 ```
 
 ## 每天自動更新

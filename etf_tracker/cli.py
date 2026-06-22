@@ -4,6 +4,7 @@ Subcommands:
   fetch [--date YYYY-MM-DD]            Scrape every configured ETF, store a snapshot.
   list  <etfid>                        List stored snapshot dates for an ETF.
   diff  <etfid> [date_a date_b]        Show change between two dates (default: latest two).
+  report <etfid> [date] [--open]       Write a static HTML report (default: latest date).
 """
 
 from __future__ import annotations
@@ -11,10 +12,12 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import sys
+import webbrowser
+from pathlib import Path
 
 import requests
 
-from . import db, diff, scraper
+from . import db, diff, report, scraper
 from .config import DEFAULT_CONFIG_PATH, load_config
 
 
@@ -88,6 +91,44 @@ def cmd_diff(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    config = load_config(args.config)
+    conn = db.connect(config.db_path)
+    dates = db.list_snapshot_dates(conn, args.etfid)
+    if not dates:
+        print(f"No snapshots found for {args.etfid}", file=sys.stderr)
+        conn.close()
+        return 1
+
+    snapshot_date = args.date or dates[-1]
+    if snapshot_date not in dates:
+        print(f"No snapshot for {args.etfid} on {snapshot_date}", file=sys.stderr)
+        conn.close()
+        return 1
+
+    holdings = db.get_snapshot(conn, args.etfid, snapshot_date)
+
+    # Find the closest earlier snapshot to diff against, if any.
+    earlier = [d for d in dates if d < snapshot_date]
+    prev_date = earlier[-1] if earlier else None
+    diff_result = None
+    if prev_date:
+        diff_result = diff.diff_snapshots(
+            db.get_snapshot(conn, args.etfid, prev_date), holdings
+        )
+    conn.close()
+
+    out_html = report.render_report(
+        args.etfid, snapshot_date, holdings, diff_result, prev_date
+    )
+    out_path = Path(args.output or f"report_{args.etfid}_{snapshot_date}.html")
+    out_path.write_text(out_html, encoding="utf-8")
+    print(f"Wrote {out_path}")
+    if args.open:
+        webbrowser.open(out_path.resolve().as_uri())
+    return 0
+
+
 def _print_diff(etfid, date_a, date_b, result: diff.HoldingsDiff) -> None:
     print(f"\nChange for {etfid}: {date_a} -> {date_b}\n")
     if result.is_empty:
@@ -135,6 +176,13 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("date_a", nargs="?", help="older date (default: 2nd latest)")
     p_diff.add_argument("date_b", nargs="?", help="newer date (default: latest)")
     p_diff.set_defaults(func=cmd_diff)
+
+    p_report = sub.add_parser("report", help="generate a static HTML report")
+    p_report.add_argument("etfid")
+    p_report.add_argument("date", nargs="?", help="snapshot date (default: latest)")
+    p_report.add_argument("-o", "--output", help="output HTML path")
+    p_report.add_argument("--open", action="store_true", help="open in browser when done")
+    p_report.set_defaults(func=cmd_report)
 
     return parser
 
