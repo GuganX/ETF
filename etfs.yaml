@@ -1,0 +1,4 @@
+# ETFs to track. Add more etfids as needed (one per line).
+db_path: etf_holdings.db
+etfids:
+  - 00981A.TW
