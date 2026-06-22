@@ -61,7 +61,7 @@ crontab -e
 加入這一行(請改成你的實際路徑):
 
 ```cron
-0 18 * * * /Users/brucehsu/claude/etf/run_daily.sh
+0 18 * * * /Users/brucehsu/personal/etf/run_daily.sh
 ```
 
 執行紀錄會寫到 `fetch.log`;每次抓取的成功/失敗也會記在資料庫的 `fetch_log` 表。
