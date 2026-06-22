@@ -1,5 +1,5 @@
 from etf_tracker.diff import diff_snapshots
-from etf_tracker.report import render_report
+from etf_tracker.report import EtfReport, render_combined_report, render_report
 from etf_tracker.scraper import Holding
 
 HOLDINGS = [
@@ -24,6 +24,28 @@ def test_report_renders_diff_section():
     assert "聯發科" in html          # added
     assert "舊股" in html            # removed
     assert "9.00% → 10.00%" in html  # weight change
+
+
+def test_combined_report_has_tab_per_etf():
+    reports = [
+        EtfReport("00981A.TW", "2026-06-23", HOLDINGS, None, None),
+        EtfReport("00991A.TW", "2026-06-23", [Holding("2330.TW", "台積電", 12.68, 3_400_000)], None, None),
+    ]
+    html = render_combined_report(reports)
+    # one tab button + one panel per ETF
+    assert html.count("data-target=") == 2
+    assert 'data-target="etf-00981A.TW"' in html
+    assert 'data-target="etf-00991A.TW"' in html
+    assert 'id="etf-00981A.TW"' in html and 'id="etf-00991A.TW"' in html
+    # first ETF's panel is active by default
+    assert '<div class="etf-panel active" id="etf-00981A.TW">' in html
+    # both ETFs' holdings are embedded
+    assert "聯發科" in html and "12.68%" in html
+
+
+def test_combined_report_empty():
+    html = render_combined_report([])
+    assert "沒有任何 ETF 快照資料" in html
 
 
 def test_report_escapes_holding_names():

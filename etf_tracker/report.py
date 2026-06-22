@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+from dataclasses import dataclass
 
 from .diff import HoldingsDiff
 from .scraper import Holding
@@ -32,6 +33,13 @@ tbody tr:hover { background: #f7f9fb; }
         font-size: 12px; font-weight: 600; margin-left: 8px; }
 .pill.g { background: #e6f4ea; color: #137333; } .pill.r { background: #fce8e6; color: #c5221f; }
 .empty { color: #889; font-style: italic; }
+.tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
+.tab { cursor: pointer; border: 1px solid #d4d9e0; background: #fff; color: #1f2933;
+       padding: 8px 16px; border-radius: 8px; font-size: 14px; font-weight: 600; }
+.tab:hover { background: #eef1f4; }
+.tab.active { background: #1a73e8; border-color: #1a73e8; color: #fff; }
+.etf-panel { display: none; }
+.etf-panel.active { display: block; }
 """
 
 _SORT_JS = """
@@ -55,16 +63,33 @@ document.querySelectorAll('table.sortable').forEach(function(t){
 });
 """
 
+_TAB_JS = """
+document.querySelectorAll('.tab').forEach(function(tab){
+  tab.addEventListener('click',function(){
+    var id=tab.dataset.target;
+    document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('active',t===tab);});
+    document.querySelectorAll('.etf-panel').forEach(function(p){
+      p.classList.toggle('active', p.id===id);
+    });
+  });
+});
+"""
 
-def render_report(
-    etfid: str,
-    snapshot_date: str,
-    holdings: list[Holding],
-    diff_result: HoldingsDiff | None,
-    prev_date: str | None,
-) -> str:
-    """Return a full standalone HTML document for one snapshot."""
-    e = html.escape
+
+@dataclass(frozen=True)
+class EtfReport:
+    """One ETF's data needed to render a report panel."""
+
+    etfid: str
+    snapshot_date: str
+    holdings: list[Holding]
+    diff_result: HoldingsDiff | None
+    prev_date: str | None
+
+
+def _render_body(report: EtfReport, e) -> str:
+    """Render the inner content (diff + holdings table) for a single ETF."""
+    holdings = report.holdings
     max_w = max((h.weight_pct for h in holdings), default=1.0) or 1.0
 
     rows = []
@@ -86,19 +111,65 @@ def render_report(
         f"</tr></thead><tbody>{''.join(rows)}</tbody></table>"
     )
 
-    diff_html = _render_diff(diff_result, prev_date, snapshot_date, e)
+    diff_html = _render_diff(report.diff_result, report.prev_date, report.snapshot_date, e)
 
+    return (
+        f'<div class="sub">快照日期 {e(report.snapshot_date)} · '
+        f"共 {len(holdings)} 檔持股 · 點欄位標題可排序</div>"
+        f"{diff_html}"
+        f'<section><h2>持股明細</h2>{holdings_table}</section>'
+    )
+
+
+def _document(title: str, body: str, *, with_tabs: bool) -> str:
+    """Wrap inner HTML in a full standalone document."""
+    e = html.escape
+    scripts = _SORT_JS + (_TAB_JS if with_tabs else "")
     return f"""<!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{e(etfid)} 持股報表 {e(snapshot_date)}</title>
+<title>{e(title)}</title>
 <style>{_CSS}</style></head>
 <body><div class="wrap">
-<h1>{e(etfid)} 持股報表</h1>
-<div class="sub">快照日期 {e(snapshot_date)} · 共 {len(holdings)} 檔持股 · 點欄位標題可排序</div>
-{diff_html}
-<section><h2>持股明細</h2>{holdings_table}</section>
-</div><script>{_SORT_JS}</script></body></html>"""
+{body}
+</div><script>{scripts}</script></body></html>"""
+
+
+def render_report(
+    etfid: str,
+    snapshot_date: str,
+    holdings: list[Holding],
+    diff_result: HoldingsDiff | None,
+    prev_date: str | None,
+) -> str:
+    """Return a full standalone HTML document for a single ETF snapshot."""
+    e = html.escape
+    report = EtfReport(etfid, snapshot_date, holdings, diff_result, prev_date)
+    body = f"<h1>{e(etfid)} 持股報表</h1>{_render_body(report, e)}"
+    return _document(f"{etfid} 持股報表 {snapshot_date}", body, with_tabs=False)
+
+
+def render_combined_report(reports: list[EtfReport]) -> str:
+    """Return one standalone HTML document with a clickable tab per ETF."""
+    e = html.escape
+    tabs = []
+    panels = []
+    for i, r in enumerate(reports):
+        panel_id = f"etf-{e(r.etfid)}"
+        active = " active" if i == 0 else ""
+        tabs.append(
+            f'<button class="tab{active}" data-target="{panel_id}">{e(r.etfid)}</button>'
+        )
+        panels.append(
+            f'<div class="etf-panel{active}" id="{panel_id}">'
+            f"<h1>{e(r.etfid)} 持股報表</h1>{_render_body(r, e)}</div>"
+        )
+    body = (
+        f'<div class="tabs">{"".join(tabs)}</div>{"".join(panels)}'
+        if reports
+        else '<p class="empty">沒有任何 ETF 快照資料。</p>'
+    )
+    return _document("ETF 持股報表", body, with_tabs=True)
 
 
 def _render_diff(diff_result, prev_date, snapshot_date, e) -> str:

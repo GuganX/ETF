@@ -4,7 +4,8 @@ Subcommands:
   fetch [--date YYYY-MM-DD]            Scrape every configured ETF, store a snapshot.
   list  <etfid>                        List stored snapshot dates for an ETF.
   diff  <etfid> [date_a date_b]        Show change between two dates (default: latest two).
-  report <etfid> [date] [--open]       Write a static HTML report (default: latest date).
+  report [etfid] [date] [--open]       Write a static HTML report. Omit etfid for a
+                                       combined report with a clickable tab per ETF.
 """
 
 from __future__ import annotations
@@ -91,37 +92,55 @@ def cmd_diff(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_etf_report(conn, etfid: str, date: str | None) -> report.EtfReport | None:
+    """Assemble one ETF's report data (holdings + diff vs prior snapshot)."""
+    dates = db.list_snapshot_dates(conn, etfid)
+    if not dates:
+        return None
+    snapshot_date = date or dates[-1]
+    if snapshot_date not in dates:
+        return None
+    holdings = db.get_snapshot(conn, etfid, snapshot_date)
+    earlier = [d for d in dates if d < snapshot_date]
+    prev_date = earlier[-1] if earlier else None
+    diff_result = (
+        diff.diff_snapshots(db.get_snapshot(conn, etfid, prev_date), holdings)
+        if prev_date
+        else None
+    )
+    return report.EtfReport(etfid, snapshot_date, holdings, diff_result, prev_date)
+
+
 def cmd_report(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     conn = db.connect(config.db_path)
-    dates = db.list_snapshot_dates(conn, args.etfid)
-    if not dates:
-        print(f"No snapshots found for {args.etfid}", file=sys.stderr)
+
+    if args.etfid:
+        # Single-ETF report.
+        r = _build_etf_report(conn, args.etfid, args.date)
         conn.close()
-        return 1
-
-    snapshot_date = args.date or dates[-1]
-    if snapshot_date not in dates:
-        print(f"No snapshot for {args.etfid} on {snapshot_date}", file=sys.stderr)
-        conn.close()
-        return 1
-
-    holdings = db.get_snapshot(conn, args.etfid, snapshot_date)
-
-    # Find the closest earlier snapshot to diff against, if any.
-    earlier = [d for d in dates if d < snapshot_date]
-    prev_date = earlier[-1] if earlier else None
-    diff_result = None
-    if prev_date:
-        diff_result = diff.diff_snapshots(
-            db.get_snapshot(conn, args.etfid, prev_date), holdings
+        if r is None:
+            print(f"No snapshot for {args.etfid}"
+                  + (f" on {args.date}" if args.date else ""), file=sys.stderr)
+            return 1
+        out_html = report.render_report(
+            r.etfid, r.snapshot_date, r.holdings, r.diff_result, r.prev_date
         )
-    conn.close()
+        default_name = f"report_{r.etfid}_{r.snapshot_date}.html"
+    else:
+        # Combined tabbed report for every configured ETF that has data.
+        reports = [
+            r for e in config.etfids
+            if (r := _build_etf_report(conn, e, args.date)) is not None
+        ]
+        conn.close()
+        if not reports:
+            print("No snapshots found for any configured ETF.", file=sys.stderr)
+            return 1
+        out_html = report.render_combined_report(reports)
+        default_name = "report.html"
 
-    out_html = report.render_report(
-        args.etfid, snapshot_date, holdings, diff_result, prev_date
-    )
-    out_path = Path(args.output or f"report_{args.etfid}_{snapshot_date}.html")
+    out_path = Path(args.output or default_name)
     out_path.write_text(out_html, encoding="utf-8")
     print(f"Wrote {out_path}")
     if args.open:
@@ -177,8 +196,11 @@ def build_parser() -> argparse.ArgumentParser:
     p_diff.add_argument("date_b", nargs="?", help="newer date (default: latest)")
     p_diff.set_defaults(func=cmd_diff)
 
-    p_report = sub.add_parser("report", help="generate a static HTML report")
-    p_report.add_argument("etfid")
+    p_report = sub.add_parser(
+        "report",
+        help="generate a static HTML report (omit etfid for a combined tabbed report)",
+    )
+    p_report.add_argument("etfid", nargs="?", help="single ETF; omit for all configured ETFs")
     p_report.add_argument("date", nargs="?", help="snapshot date (default: latest)")
     p_report.add_argument("-o", "--output", help="output HTML path")
     p_report.add_argument("--open", action="store_true", help="open in browser when done")

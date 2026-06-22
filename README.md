@@ -39,7 +39,11 @@ etfids:
 .venv/bin/python -m etf_tracker.cli diff 00981A.TW
 .venv/bin/python -m etf_tracker.cli diff 00981A.TW 2026-06-21 2026-06-22
 
-# 產生好讀的 HTML 報表(持股表格可排序 + 與前一日變化標色),並用瀏覽器打開
+# 產生「所有 ETF」的合併報表:上方有可點選的分頁,點哪個 ETF 就顯示哪個
+# (每個分頁含可排序的持股表格 + 與前一日變化標色)
+.venv/bin/python -m etf_tracker.cli report --open
+
+# 只產生單一 ETF 的報表
 .venv/bin/python -m etf_tracker.cli report 00981A.TW --open
 .venv/bin/python -m etf_tracker.cli report 00981A.TW 2026-06-22 -o my_report.html
 ```
