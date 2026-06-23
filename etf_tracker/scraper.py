@@ -20,6 +20,9 @@ USER_AGENT = (
 # `名稱(代號)`, e.g. "台積電(2330.TW)" or "國巨*(2327.TW)"
 _NAME_CODE_RE = re.compile(r"^(.*?)\s*\(([^)]+)\)\s*$")
 
+# Page shows "資料日期：2026/06/22" near the holdings table.
+_DATA_DATE_RE = re.compile(r"資料日期[：:]\s*(\d{4})[/-](\d{1,2})[/-](\d{1,2})")
+
 
 @dataclass(frozen=True)
 class Holding:
@@ -27,6 +30,16 @@ class Holding:
     stock_name: str
     weight_pct: float
     shares: int
+
+
+def parse_data_date(html: str) -> str | None:
+    """Return the page's stated data date as 'YYYY-MM-DD', or None if absent."""
+    soup = BeautifulSoup(html, "lxml")
+    match = _DATA_DATE_RE.search(soup.get_text(" ", strip=True))
+    if not match:
+        return None
+    year, month, day = (int(g) for g in match.groups())
+    return f"{year:04d}-{month:02d}-{day:02d}"
 
 
 def parse_holdings(html: str) -> list[Holding]:
@@ -82,13 +95,24 @@ def _build_session() -> requests.Session:
     return session
 
 
-def fetch_holdings(etfid: str, *, timeout: float = 20.0) -> list[Holding]:
-    """Fetch the page for `etfid` and parse its holdings."""
+@dataclass(frozen=True)
+class Snapshot:
+    data_date: str | None  # the page's stated 資料日期, or None if not found
+    holdings: list[Holding]
+
+
+def fetch_snapshot(etfid: str, *, timeout: float = 20.0) -> Snapshot:
+    """Fetch the page for `etfid`; return its data date and holdings."""
     session = _build_session()
     resp = session.get(BASE_URL, params={"etfid": etfid}, timeout=timeout)
     resp.raise_for_status()
     resp.encoding = resp.apparent_encoding or "utf-8"
-    return parse_holdings(resp.text)
+    return Snapshot(parse_data_date(resp.text), parse_holdings(resp.text))
+
+
+def fetch_holdings(etfid: str, *, timeout: float = 20.0) -> list[Holding]:
+    """Fetch the page for `etfid` and parse its holdings (date-agnostic)."""
+    return fetch_snapshot(etfid, timeout=timeout).holdings
 
 
 def _find_holdings_table(soup: BeautifulSoup):

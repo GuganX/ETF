@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from etf_tracker.scraper import Holding, parse_holdings
+from etf_tracker.scraper import Holding, parse_data_date, parse_holdings
 
 FIXTURE = Path(__file__).parent / "fixtures" / "00981A_sample.html"
 
@@ -40,3 +40,12 @@ def test_all_records_are_well_typed():
 
 def test_empty_html_returns_empty_list():
     assert parse_holdings("<html><body>no table</body></html>") == []
+
+
+def test_parses_data_date_from_page():
+    # The page shows "資料日期：2026/06/22" -> normalised to ISO.
+    assert parse_data_date(FIXTURE.read_text(encoding="utf-8")) == "2026-06-22"
+
+
+def test_data_date_none_when_absent():
+    assert parse_data_date("<html><body>no date here</body></html>") is None

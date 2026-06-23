@@ -34,17 +34,21 @@ def _now_iso() -> str:
 def cmd_fetch(args: argparse.Namespace) -> int:
     config = load_config(args.config)
     conn = db.connect(config.db_path)
-    snapshot_date = args.date or _today()
     exit_code = 0
     for etfid in config.etfids:
         try:
-            holdings = scraper.fetch_holdings(etfid)
-            if not holdings:
+            snap = scraper.fetch_snapshot(etfid)
+            if not snap.holdings:
                 raise ValueError("no holdings parsed (page format changed or empty?)")
-            count = db.save_snapshot(conn, etfid, snapshot_date, holdings)
+            # Key the snapshot on the page's own 資料日期 so re-running before the
+            # source publishes a new date overwrites the same row instead of
+            # creating a duplicate under today's local date.
+            snapshot_date = args.date or snap.data_date or _today()
+            count = db.save_snapshot(conn, etfid, snapshot_date, snap.holdings)
             db.log_fetch(conn, etfid, snapshot_date, _now_iso(), count, "ok")
             print(f"[ok]    {etfid}  {snapshot_date}  {count} holdings")
         except (requests.RequestException, ValueError) as exc:
+            snapshot_date = args.date or _today()
             db.log_fetch(conn, etfid, snapshot_date, _now_iso(), 0, "error", str(exc))
             print(f"[error] {etfid}  {snapshot_date}  {exc}", file=sys.stderr)
             exit_code = 1
