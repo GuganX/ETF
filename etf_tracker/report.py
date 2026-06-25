@@ -201,14 +201,6 @@ def _render_diff(diff_result, prev_date, snapshot_date, e) -> str:
         )
         parts.append(f"<b>🔴 移除持股<span class='pill r'>{len(diff_result.removed)}</span></b><ul>{items}</ul>")
 
-    if diff_result.weight_changes:
-        items = "".join(
-            f'<li class="{"up" if c.delta >= 0 else "down"}">{e(c.stock_name)} ({e(c.stock_code)}) '
-            f'{c.old_weight:.2f}% → {c.new_weight:.2f}% ({"+" if c.delta >= 0 else ""}{c.delta:.2f})</li>'
-            for c in diff_result.weight_changes
-        )
-        parts.append(f"<b>📊 比例變化<span class='pill g'>{len(diff_result.weight_changes)}</span></b><ul>{items}</ul>")
-
     if diff_result.shares_changes:
         items = "".join(
             f'<li class="{"up" if c.delta >= 0 else "down"}">{e(c.stock_name)} ({e(c.stock_code)}) '

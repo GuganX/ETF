@@ -23,7 +23,8 @@ def test_report_renders_diff_section():
     html = render_report("00981A.TW", "2026-06-22", HOLDINGS, d, "2026-06-21")
     assert "聯發科" in html          # added
     assert "舊股" in html            # removed
-    assert "9.00% → 10.00%" in html  # weight change
+    assert "比例變化" not in html
+    assert "11,000,000 → 11,960,000" in html  # shares change
 
 
 def test_combined_report_has_tab_per_etf():
